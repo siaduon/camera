@@ -1,70 +1,95 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <title>Admin Viewer</title>
-  <style>
-    body { background:#1e293b; color:#fff; text-align:center; padding:20px; }
-    video { width:90%; max-width:400px; border-radius:12px; margin-top:20px; }
-  </style>
+<meta charset="UTF-8">
+<title>Admin Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{background:#020617;color:#fff;text-align:center;font-family:Arial;padding:20px;}
+video{width:95%;max-width:420px;margin-top:20px;border-radius:12px;background:#000;}
+.statusBox{background:#1e293b;padding:15px;border-radius:10px;margin-top:20px;max-width:450px;margin:auto;}
+.green{color:#22c55e;font-weight:bold;}
+.red{color:#ef4444;font-weight:bold;}
+</style>
 </head>
 <body>
 
-<h1>Monitor Kamera Target</h1>
+<h1>Admin – Monitor Kamera Target</h1>
+
+<div class="statusBox">
+  <p>Status Target: <span id="status" class="red">OFFLINE</span></p>
+</div>
+
 <video id="remoteVideo" autoplay playsinline></video>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-  import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+import { getDatabase, ref, onValue, push, onChildAdded, update }
+from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
 
-  const config = {
-    apiKey: "AIzaSyDxgnLu6L...", 
-    authDomain: "simulasi-kamera.firebaseapp.com",
-    databaseURL: "https://simulasi-kamera-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "simulasi-kamera",
-    storageBucket: "simulasi-kamera.firebasestorage.app",
-    messagingSenderId: "924924454534",
-    appId: "1:924924454534:web:8a3c34079aa1b0edd9d307",
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyDxgnLu6TtJce2hd1DL07z5MWo62blEgC8",
+  authDomain: "simulasi-kamera.firebaseapp.com",
+  databaseURL: "https://simulasi-kamera-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "simulasi-kamera",
+  storageBucket: "simulasi-kamera.firebasestorage.app",
+  messagingSenderId: "924924454534",
+  appId: "1:924924454534:web:8a3c34079aa1b0edd9d307"
+};
 
-  const app = initializeApp(config);
-  const db = getDatabase(app);
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
 
-  const pc = new RTCPeerConnection();
+const statusEl = document.getElementById("status");
 
-  pc.ontrack = (event) => {
-    document.getElementById("remoteVideo").srcObject = event.streams[0];
-  };
+// UPDATE STATUS ONLINE/OFFLINE
+onValue(ref(db,"room/default/status"), snap=>{
+    const s = snap.val();
+    if(!s) return;
+    if(s.target === "ONLINE"){
+        statusEl.textContent = "ONLINE";
+        statusEl.className = "green";
+    } else {
+        statusEl.textContent = "OFFLINE";
+        statusEl.className = "red";
+    }
+});
 
-  const callRef = ref(db, "webrtc/call");
+// WebRTC
+const pc = new RTCPeerConnection({ iceServers:[{ urls:"stun:stun.l.google.com:19302"}] });
 
-  onValue(callRef, async snap => {
+const remoteVideo = document.getElementById("remoteVideo");
+
+const callRef   = ref(db,"room/default/call");
+const callerICE = ref(db,"room/default/callerICE");
+const calleeICE = ref(db,"room/default/calleeICE");
+
+pc.ontrack = e => {
+    remoteVideo.srcObject = e.streams[0];
+};
+
+pc.onicecandidate = e=>{
+    if(e.candidate) push(calleeICE, e.candidate.toJSON());
+};
+
+// Listen OFFER from target → send ANSWER
+onValue(callRef, async snap=>{
     const data = snap.val();
-    if (!data) return;
+    if(!data?.offer) return;
 
-    if (data.offer && !pc.currentRemoteDescription) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
 
-      await set(callRef, { ...data, answer });
-    }
-  });
+    await update(callRef,{ answer });
+});
 
-  const candidateRef = ref(db, "webrtc/candidate_target");
-  onValue(candidateRef, snap => {
-    const c = snap.val();
-    if (c) {
-      pc.addIceCandidate(new RTCIceCandidate(c));
-    }
-  });
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      set(ref(db, "webrtc/candidate_admin"), event.candidate);
-    }
-  };
+// Receive ICE from target
+onChildAdded(callerICE, snap=>{
+    const cand = snap.val();
+    if(cand) pc.addIceCandidate(new RTCIceCandidate(cand));
+});
 </script>
 
 </body>
