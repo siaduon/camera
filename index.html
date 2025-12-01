@@ -1,65 +1,137 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
   <meta charset="UTF-8">
-  <title>Target Kamera</title>
+  <title>Target - Bagikan Kamera</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { background:#0f172a; color:#fff; font-family:Arial; text-align:center; padding:20px; }
-    video { width:90%; max-width:380px; border-radius:12px; margin-top:20px; }
-    button { padding:12px 20px; margin-top:15px; border:none; border-radius:10px; cursor:pointer; }
+    body {
+      background:#0f172a;
+      color:#e2e8f0;
+      font-family:Arial, sans-serif;
+      text-align:center;
+      padding:20px;
+    }
+    video {
+      width:90%;
+      max-width:380px;
+      border-radius:12px;
+      margin-top:20px;
+      background:#000;
+    }
+    button {
+      padding:12px 20px;
+      margin-top:15px;
+      border:none;
+      border-radius:10px;
+      cursor:pointer;
+      font-weight:bold;
+    }
+    #startBtn { background:#22c55e; color:#052e16; }
   </style>
 </head>
 <body>
 
 <h1>Bagikan Kamera ke Admin</h1>
-<p>Tekan tombol di bawah untuk mengaktifkan kamera dan mengizinkan admin melihat.</p>
+<p>Tekan tombol di bawah lalu berikan izin kamera. Admin akan dapat melihat video Anda.</p>
 
-<button id="startBtn">Aktifkan Kamera</button>
+<button id="startBtn">Aktifkan & Bagikan Kamera</button>
 <video id="localVideo" autoplay playsinline muted></video>
 
 <script type="module">
+  // Import Firebase SDK (v12.6.0)
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-  import { getDatabase, ref, set, push, onValue } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+  import {
+    getDatabase,
+    ref,
+    set,
+    update,
+    push,
+    onValue,
+    onChildAdded
+  } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
 
-  const config = {
-    apiKey: "AIzaSyDxgnLu6L...", 
+  // KONFIGURASI PROJECT KAMU
+  const firebaseConfig = {
+    apiKey: "AIzaSyDxgnLu6TtJce2hd1DL07z5MWo62blEgC8",
     authDomain: "simulasi-kamera.firebaseapp.com",
     databaseURL: "https://simulasi-kamera-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "simulasi-kamera",
     storageBucket: "simulasi-kamera.firebasestorage.app",
     messagingSenderId: "924924454534",
     appId: "1:924924454534:web:8a3c34079aa1b0edd9d307",
+    measurementId: "G-1HBLTTVED4"
   };
 
-  const app = initializeApp(config);
+  const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  const pc = new RTCPeerConnection();
+  // STUN server untuk WebRTC (standar Google)
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
 
-  document.getElementById("startBtn").onclick = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
-    document.getElementById("localVideo").srcObject = stream;
+  const localVideo = document.getElementById("localVideo");
+  const startBtn   = document.getElementById("startBtn");
 
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+  // REFERENSI DATABASE UNTUK 1 "ROOM"
+  const callRef             = ref(db, "calls/default");
+  const callerCandidatesRef = ref(db, "calls/default/callerCandidates");
+  const calleeCandidatesRef = ref(db, "calls/default/calleeCandidates");
 
-    const callRef = ref(db, "webrtc/call");
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+  // TERIMA ICE CANDIDATE DARI ADMIN
+  onChildAdded(calleeCandidatesRef, async (snap) => {
+    const data = snap.val();
+    if (!data) return;
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(data));
+    } catch (err) {
+      console.error("Gagal add ICE dari admin:", err);
+    }
+  });
 
-    await set(callRef, { offer });
+  // BIKIN OFFER SAAT TARGET MULAI
+  startBtn.onclick = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    onValue(callRef, async snap => {
-      const data = snap.val();
-      if (!pc.currentRemoteDescription && data.answer) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      }
-    });
+      // Kirim ICE candidate TARGET ke Firebase
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          push(callerCandidatesRef, event.candidate.toJSON());
+        }
+      };
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        set(ref(db, "webrtc/candidate_target"), event.candidate);
-      }
-    };
+      // Buat SDP Offer dan simpan ke DB
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      await set(callRef, {
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp
+        }
+      });
+
+      startBtn.disabled = true;
+      startBtn.textContent = "Kamera Aktif & Dibagikan";
+
+      // Tunggu ANSWER dari ADMIN
+      onValue(callRef, async (snap) => {
+        const data = snap.val();
+        if (!data) return;
+        if (data.answer && !pc.currentRemoteDescription) {
+          const answer = new RTCSessionDescription(data.answer);
+          await pc.setRemoteDescription(answer);
+        }
+      });
+
+    } catch (err) {
+      console.error("Gagal mengaktifkan kamera:", err);
+      alert("Tidak bisa mengakses kamera. Pastikan izin sudah diberikan dan dibuka via HTTPS / localhost.");
+    }
   };
 </script>
 
