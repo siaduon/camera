@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel Admin Simulasi</title>
+  <style>
+    body { background:#1e293b; color:#e5e7eb; font-family:Arial; text-align:center; padding:20px; }
+    .box { background:#0f172a; padding:20px; border-radius:12px; margin-top:30px; max-width:420px; margin:auto; box-shadow:0 0 20px rgba(0,0,0,0.4); }
+    .status { font-size:1.5rem; font-weight:bold; margin-top:10px; }
+    .time { font-size:0.9rem; opacity:0.7; }
+  </style>
+</head>
+<body>
+
+<h1>Admin Panel – Simulasi Penyerang</h1>
+<p>Panel ini membaca status korban dari localStorage (aman, hanya dalam device yang sama).</p>
+
+<div class="box">
+  <div class="status" id="status">Menunggu...</div>
+  <div class="time" id="time"></div>
+</div>
+
+<script>
+function check(){
+  const st = localStorage.getItem("camera_status") || "UNKNOWN";
+  const tm = localStorage.getItem("camera_time") || "-";
+
+  let txt = "";
+  if (st === "REQUESTING") txt = "Korban meminta izin kamera...";
+  else if (st === "CAMERA_ON") txt = "KAMERA KORBAN AKTIF";
+  else if (st === "CAMERA_OFF") txt = "Kamera dimatikan";
+  else if (st === "DENIED") txt = "Korban menolak izin kamera";
+  else txt = "Status tidak diketahui";
+
+  document.getElementById("status").textContent = txt;
+  document.getElementById("time").textContent = "Update: " + tm;
+}
+
+setInterval(check, 500);
+</script>
+
+</body>
+</html>
